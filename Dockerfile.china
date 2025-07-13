@@ -1,58 +1,46 @@
-# 使用 DaoCloud 镜像的 Python 镜像
-FROM docker.m.daocloud.io/library/python:3.10.11-slim AS builder
+# 基础镜像（DaoCloud）
+FROM python:3.10.11-slim AS builder
 
-# 设置环境变量
+# 环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_DEFAULT_TIMEOUT=100
 
-# 配置 pip 使用国内镜像源
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+# pip国内源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+    && pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
-# 安装构建依赖 - 使用阿里云镜像源
-RUN echo "deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        gcc \
-        g++ \
-        python3-dev \
-        libffi-dev \
-        libssl-dev \
-        build-essential \
-        git \
-        wget \
-        ca-certificates \
+# 构建依赖（阿里云源）
+RUN echo "deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list \
+    && echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && echo "deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && echo "deb https://mirrors.aliyun.com/debian bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gcc g++ python3-dev libffi-dev libssl-dev build-essential git wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 升级pip并设置超时
+# 升级pip
 RUN pip install --upgrade pip setuptools wheel
 
-# 创建虚拟环境
+# 虚拟环境
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# 安装PyTorch相关包（临时覆盖全局pip源设置，直接使用PyTorch官方源）
-RUN pip install --retries 10 --timeout 600 \
-    torch torchvision torchaudio \
-    -i https://download.pytorch.org/whl/cu128 \
-    --no-cache-dir
+# 先安装 typing-extensions，避免 PyTorch 依赖冲突
+RUN pip install --retries 3 --timeout 180 typing-extensions -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 再安装 PyTorch 及相关包
+RUN pip install --retries 10 --timeout 600 --prefer-binary torch torchvision torchaudio -i https://download.pytorch.org/whl/cu128 --no-cache-dir
 
-# 复制requirements.txt并安装Python依赖
+# 安装主依赖
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --retries 3 --timeout 180 \
-    -r /tmp/requirements.txt \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --retries 3 --timeout 180 -r /tmp/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 生产阶段 - 同样使用 DaoCloud 镜像
-FROM docker.m.daocloud.io/library/python:3.10.11-slim AS production
+# 生产镜像
+FROM python:3.10.11-slim AS production
 
-# 设置环境变量
+# 环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
@@ -60,59 +48,41 @@ ENV PYTHONUNBUFFERED=1 \
     COMFYUI_HOST=0.0.0.0 \
     INSTALL_COMFYUI_MANAGER=false
 
-# 安装运行时依赖 - 使用阿里云镜像源
-RUN echo "deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.aliyun.com/debian bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ffmpeg \
-        libgl1 \
-        libglib2.0-0 \
-        libgomp1 \
-        libgcc-s1 \
-        curl \
-        ca-certificates \
+# 运行依赖（阿里云源，增加 git）
+RUN echo "deb https://mirrors.aliyun.com/debian bookworm main contrib non-free non-free-firmware" > /etc/apt/sources.list \
+    && echo "deb https://mirrors.aliyun.com/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && echo "deb https://mirrors.aliyun.com/debian bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && echo "deb https://mirrors.aliyun.com/debian bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 libgomp1 libgcc-s1 curl ca-certificates git \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# 从构建阶段复制虚拟环境
+# 复制虚拟环境
 COPY --from=builder /opt/venv /opt/venv
 
 # 创建非root用户
-RUN groupadd -r comfyui && \
-    useradd -r -g comfyui -d /app -s /bin/bash comfyui
+RUN groupadd -r comfyui && useradd -r -g comfyui -d /app -s /bin/bash comfyui
+
+# 修正 comfyui 用户权限，确保可写 /opt/venv
+RUN chown -R comfyui:comfyui /opt/venv
 
 # 设置工作目录
 WORKDIR /app
 
-# 复制应用代码
+# 复制代码
 COPY --chown=comfyui:comfyui . /app
 
-# 配置 pip 使用国内镜像源（生产环境）
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+# 先安装 typing-extensions，避免 PyTorch 依赖冲突
+RUN pip install --retries 3 --timeout 180 typing-extensions -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 合并所有初始化操作为一个 RUN，减少层数
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+    && pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn \
+    && pip install --no-cache-dir -r custom_nodes/ComfyUI-Manager/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    && mkdir -p /app/output /app/input /app/models /app/temp \
+    && chown -R comfyui:comfyui /app
 
-# 条件安装ComfyUI Manager依赖
-RUN if [ "$INSTALL_COMFYUI_MANAGER" = "true" ] && [ -f custom_nodes/ComfyUI-Manager/requirements.txt ]; then \
-        pip install --no-cache-dir -r custom_nodes/ComfyUI-Manager/requirements.txt \
-        -i https://pypi.tuna.tsinghua.edu.cn/simple; \
-    fi
-
-# 创建必要的目录并设置权限
-RUN mkdir -p /app/output /app/input /app/models /app/temp && \
-    chown -R comfyui:comfyui /app
-
-# 切换到非root用户
 USER comfyui
-
-# 暴露端口
 EXPOSE $COMFYUI_PORT
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:$COMFYUI_PORT/ || exit 1
-
-# 启动命令
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD curl -f http://localhost:$COMFYUI_PORT/ || exit 1
 CMD ["sh", "-c", "python main.py --listen $COMFYUI_HOST --port $COMFYUI_PORT"]

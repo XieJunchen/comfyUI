@@ -41,4 +41,4 @@ fi
 EXPOSE 8188
 
 # 启动命令
-CMD ["python", "main.py"]
+CMD ["python", "main.py", "--host=0.0.0.0"]

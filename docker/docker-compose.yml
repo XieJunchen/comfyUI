@@ -1,8 +1,8 @@
 version: '3.8'
 services:
   comfyui:
-    image: comfyui:0.1
-    container_name: comfyui
+    image: comfyui:latest
+    container_name: comfyui-0.4
     restart: unless-stopped
     ports:
       - "8188:8188"

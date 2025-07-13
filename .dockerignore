@@ -13,3 +13,4 @@ output/
 alembic/versions/*.pyc
 *.zip
 *.tar.gz
+wheels/*.whl
